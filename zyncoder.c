@@ -1,15 +1,15 @@
 /*
  * ******************************************************************
  * ZYNTHIAN PROJECT: Zyncoder Library
- * 
- * Library for interfacing Rotary Encoders & Switches connected 
+ *
+ * Library for interfacing Rotary Encoders & Switches connected
  * to RBPi native GPIOs or expanded with MCP23008/MCP23017.
  * Includes an emulator mode for developing on desktop computers.
-  * 
+  *
  * Copyright (C) 2015-2021 Fernando Moyano <jofemodo@zynthian.org>
  *
  * ******************************************************************
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
  * published by the Free Software Foundation; either version 2 of
@@ -21,7 +21,7 @@
  * GNU General Public License for more details.
  *
  * For a full copy of the GNU General Public License see the LICENSE.txt file.
- * 
+ *
  * ******************************************************************
  */
 
@@ -81,6 +81,10 @@ unsigned int int_to_int(unsigned int k) {
 	return (k == 0 || k == 1 ? k : ((k % 2) + 10 * int_to_int(k / 2)));
 }
 #endif
+
+
+// Table of valid encoder states
+static const uint8_t anValid[] = {0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0};
 
 //-----------------------------------------------------------------------------
 // Zynswitch functions
@@ -147,7 +151,7 @@ int setup_zynswitch(uint8_t i, uint8_t pin) {
 		printf("ZynCore->setup_zynswitch(%d, ...): Invalid index!\n", i);
 		return 0;
 	}
-	
+
 	zynswitch_t *zsw = zynswitches + i;
 	zsw->enabled = 1;
 	zsw->pin = pin;
@@ -163,7 +167,7 @@ int setup_zynswitch(uint8_t i, uint8_t pin) {
 		if (pin<100) {
 			wiringPiISR(pin,INT_EDGE_BOTH, zynswitch_rbpi_ISRs[i]);
 			zynswitch_rbpi_ISR(i);
-		} 
+		}
 		// MCP23017 pin
 		else if (pin>=100) {
 			zynswitch_mcp23017_update(i);
@@ -228,7 +232,7 @@ int get_next_pending_zynswitch(uint8_t i) {
 	while (i<MAX_NUM_ZYNSWITCHES) {
 		if (zynswitches[i].dtus>0 || zynswitches[i].tsus>0) return (int)i;
 		i++;
-	} 
+	}
 	return -1;
 }
 
@@ -302,15 +306,15 @@ void send_zynswitch_midi(zynswitch_t *zsw, uint8_t status) {
 //-----------------------------------------------------------------------------
 
 void reset_zyncoders() {
-	int i,j;
+	int i;
 	for (i=0;i<MAX_NUM_ZYNCODERS;i++) {
 		zyncoders[i].enabled = 0;
 		zyncoders[i].inv = 0;
 		zyncoders[i].value = 0;
 		zyncoders[i].value_flag = 0;
  		zyncoders[i].zpot_i = -1;
-		for (j=0;j<ZYNCODER_TICKS_PER_RETENT;j++)
-			zyncoders[i].dtus[j] = 0;
+ 		zyncoders[i].code = 0;
+ 		zyncoders[i].count = 0;
 	}
 }
 
@@ -323,99 +327,87 @@ int get_num_zyncoders() {
 	return n;
 }
 
-void update_zyncoder(uint8_t i, uint8_t msb, uint8_t lsb) {
-	zyncoder_t *zcdr = zyncoders + i;
+void update_zyncoder(uint8_t encoder, uint8_t msb, uint8_t lsb) {
+	zyncoder_t *zcdr = zyncoders + encoder;
 
-	uint8_t encoded = (msb << 1) | lsb;
-	uint8_t sum = (zcdr->last_encoded << 2) | encoded;
-	int spin;
-	if (sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) spin = 1;
-	else if (sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) spin = -1;
-	else spin = 0;
-	if (zcdr->inv) spin = -spin;
-	#ifdef DEBUG
-	//printf("zyncoder %2d - %08d\t%08d\t%d\n", i, int_to_int(encoded), int_to_int(sum), spin);
-	#endif
-	zcdr->last_encoded=encoded;
+    if (!lsb && !zcdr->code)
+      return; // No clock signal or not mid-decode
+    zcdr->code <<= 2;
+    if (msb)
+      zcdr->code |= 0x02;
+    if (lsb)
+      zcdr->code |= 0x01;
+    zcdr->code &= 0x0f;
+    int8_t dir = 0;
+    // If valid then add to 8-bit history validate rotation codes and process
+    if (anValid[zcdr->code]) {
+      zcdr->count <<= 4;
+      zcdr->count |= zcdr->code;
+      if (zcdr->count == 0xd4) {
+        // CW
+        dir = 1;
+      }
+      else if (zcdr->count == 0x17) {
+        // CCW
+        dir = -1;
+      }
+      else
+		return;
+    }
 
-	int32_t value;
-	if (zcdr->step==0) {
+	int dval = dir;
+	if (zcdr->step) {
+		dval = zcdr->step * dir;
+	} else {
 		//Get time interval from last tick
 		struct timespec ts;
 		unsigned long int tsus;
 		clock_gettime(CLOCK_MONOTONIC, &ts);
-		tsus=ts.tv_sec*1000000 + ts.tv_nsec/1000;
-		unsigned int dtus=tsus-zcdr->tsus;
-		//printf("ZYNCODER ISR %d => SUBVALUE=%d (%u)\n",i,zcdr->subvalue,dtus);
+		tsus = ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+		long dtus = tsus - zcdr->tsus;
 		//Ignore spurious ticks
-		if (dtus<1000) return;
-		//printf("ZYNCODER DEBOUNCED ISR %d => SUBVALUE=%d (%u)\n",i,zcdr->subvalue,dtus);
-		//Calculate average dtus for the last ZYNCODER_TICKS_PER_RETENT ticks
-		int j;
-		unsigned int dtus_avg=dtus;
-		for (j=0;j<ZYNCODER_TICKS_PER_RETENT;j++) dtus_avg+=zcdr->dtus[j];
-		dtus_avg/=(ZYNCODER_TICKS_PER_RETENT+1);
-		//Add last dtus to fifo array
-		for (j=0;j<ZYNCODER_TICKS_PER_RETENT-1;j++)
-			zcdr->dtus[j]=zcdr->dtus[j+1];
-		zcdr->dtus[j]=dtus;
 		//Calculate step value
-		int32_t dsval=10000*ZYNCODER_TICKS_PER_RETENT/dtus_avg;
-		if (dsval<1) dsval=1;
-		else if (dsval>2*ZYNCODER_TICKS_PER_RETENT) dsval=2*ZYNCODER_TICKS_PER_RETENT;
+		/*	If time since last tick is large then single step
+			If time since last tick is small then scale step inversly to time, i.e. by speed
+		*/
+		if (dtus < 100000)
+			dval = (((100000 - dtus) / 10000) + 1) * dir;
 
-		int32_t sv;
-		if (spin>0) {
-			sv = zcdr->subvalue + dsval;
-			if (sv > zcdr->max_value) sv = zcdr->max_value;
-		}
-		else if (spin<0) {
-			sv = zcdr->subvalue - dsval;
-			if (sv < zcdr->min_value) sv = zcdr->min_value;
-		}
-		zcdr->subvalue = sv;
-		value = sv / ZYNCODER_TICKS_PER_RETENT;
-		zcdr->tsus=tsus;
-		//printf("DTUS=%d, %d (%d)\n",dtus_avg,value,dsval);
-	} 
-	else {
-		if (spin>0) {
-			value = zcdr->value + zcdr->step;
-			if (value>zcdr->max_value) value=zcdr->max_value;
-		}
-		else if (spin<0) {
-			value = zcdr->value - zcdr->step;
-			if (value<zcdr->min_value) value=zcdr->min_value;
-		}
+		zcdr->tsus = (unsigned long)tsus;
 	}
-
-	if (zcdr->value!=value) {
-		zcdr->value=value;
+	int32_t value = zcdr->value + dval;
+	if (value < zcdr->min_value)
+		value = zcdr->min_value;
+	if (value > zcdr->max_value)
+		value = zcdr->max_value;
+	if (zcdr->value != value) {
+		//printf("DTUS=%d, %d (%d)\n",dtus_avg,value,dsval);
+		zcdr->value = value;
 		zcdr->value_flag = 1;
 		send_zynpot(zcdr->zpot_i);
 	}
 }
 
-int setup_zyncoder(uint8_t i, uint8_t pin_a, uint8_t pin_b) {
-	if (i>=MAX_NUM_ZYNCODERS) {
-		printf("ZynCore->setup_zyncoder(%d, ...): Invalid index!\n", i);
+int setup_zyncoder(uint8_t encoder, uint8_t pin_a, uint8_t pin_b) {
+	if (encoder >= MAX_NUM_ZYNCODERS) {
+		printf("ZynCore->setup_zyncoder(%d, ...): Invalid index!\n", encoder);
 		return 0;
 	}
-	zyncoder_t *zcdr = zyncoders + i;
+	zyncoder_t *zcdr = zyncoders + encoder;
 
 	//setup_rangescale_zyncoder(i,0,127,64,0);
 	zcdr->inv = 0;
 	zcdr->step = 1;
 	zcdr->value = 0;
-	zcdr->subvalue = 0;
 	zcdr->min_value = 0;
 	zcdr->max_value = 127;
+	zcdr->code = 0;
+	zcdr->count = 0;
 
 	if (zcdr->enabled==0 || zcdr->pin_a!=pin_a || zcdr->pin_b!=pin_b) {
 		zcdr->enabled = 1;
 		zcdr->pin_a = pin_a;
 		zcdr->pin_b = pin_b;
-		zcdr->last_encoded = 0;
 		zcdr->tsus = 0;
 
 		if (zcdr->pin_a!=zcdr->pin_b) {
@@ -426,13 +418,13 @@ int setup_zyncoder(uint8_t i, uint8_t pin_a, uint8_t pin_b) {
 
 			// RBPi GPIO pins
 			if (zcdr->pin_a<100 && zcdr->pin_b<100) {
-				wiringPiISR(pin_a,INT_EDGE_BOTH, zyncoder_rbpi_ISRs[i]);
-				wiringPiISR(pin_b,INT_EDGE_BOTH, zyncoder_rbpi_ISRs[i]);
-				zyncoder_rbpi_ISR(i);
-			} 
+				wiringPiISR(pin_a,INT_EDGE_BOTH, zyncoder_rbpi_ISRs[encoder]);
+				wiringPiISR(pin_b,INT_EDGE_BOTH, zyncoder_rbpi_ISRs[encoder]);
+				zyncoder_rbpi_ISR(encoder);
+			}
 			// MCP23017 pins
 			else if (zcdr->pin_a>=100 && zcdr->pin_b>=100) {
-				zyncoder_mcp23017_update(i);
+				zyncoder_mcp23017_update(encoder);
 			}
 			// Can't configure mixed pins!
 			else {
@@ -445,19 +437,19 @@ int setup_zyncoder(uint8_t i, uint8_t pin_a, uint8_t pin_b) {
 	return 1;
 }
 
-int setup_rangescale_zyncoder(uint8_t i, int32_t min_value, int32_t max_value, int32_t value, int32_t step) {
-	if (i>=MAX_NUM_ZYNCODERS || zyncoders[i].enabled==0) {
-		printf("ZynCore->setup_rangescale_zyncoder(%d, ...): Invalid index!\n", i);
+int setup_rangescale_zyncoder(uint8_t encoder, int32_t min_value, int32_t max_value, int32_t value, int32_t step) {
+	if (encoder >= MAX_NUM_ZYNCODERS || zyncoders[encoder].enabled == 0) {
+		printf("ZynCore->setup_rangescale_zyncoder(%d, ...): Invalid index!\n", encoder);
 		return 0;
 	}
-	if (min_value==max_value) {
-		printf("ZynCore->setup_rangescale_zyncoder(%d, %d, %d, ...): Invalid range!\n", i, min_value, max_value);
+	if (min_value == max_value) {
+		printf("ZynCore->setup_rangescale_zyncoder(%d, %d, %d, ...): Invalid range!\n", encoder, min_value, max_value);
 		return 0;
 	}
 
-	zyncoder_t *zcdr = zyncoders + i;
+	zyncoder_t *zcdr = zyncoders + encoder;
 
-	if (min_value>max_value) {
+	if (min_value > max_value) {
 		int32_t swapv = min_value;
 		min_value = max_value;
 		max_value = swapv;
@@ -467,25 +459,17 @@ int setup_rangescale_zyncoder(uint8_t i, int32_t min_value, int32_t max_value, i
 		zcdr->inv = 0;
 	}
 
-	if (value>max_value) value = max_value;
-	else if (value<min_value) value = min_value;
+	if (value > max_value) value = max_value;
+	else if (value < min_value) value = min_value;
 
 	zcdr->step = step;
-	if (step==0) {
-		zcdr->value = value;
-		zcdr->subvalue = ZYNCODER_TICKS_PER_RETENT * value;
-		zcdr->min_value = ZYNCODER_TICKS_PER_RETENT * min_value;
-		zcdr->max_value = ZYNCODER_TICKS_PER_RETENT * (max_value + 1) - 1;
-	} else {
-		zcdr->value = value;
-		zcdr->subvalue = 0;
-		zcdr->min_value = min_value;
-		zcdr->max_value = max_value;
-	}
+	zcdr->value = value;
+	zcdr->min_value = min_value;
+	zcdr->max_value = max_value;
 }
 
 int32_t get_value_zyncoder(uint8_t i) {
-	if (i>=MAX_NUM_ZYNCODERS || zyncoders[i].enabled==0) {
+	if (i >= MAX_NUM_ZYNCODERS || zyncoders[i].enabled == 0) {
 		printf("ZynCore->get_value_zyncoder(%d): Invalid index!\n", i);
 		return 0;
 	}
@@ -494,32 +478,27 @@ int32_t get_value_zyncoder(uint8_t i) {
 }
 
 uint8_t get_value_flag_zyncoder(uint8_t i) {
-	if (i>=MAX_NUM_ZYNCODERS || zyncoders[i].enabled==0) {
+	if (i >= MAX_NUM_ZYNCODERS || zyncoders[i].enabled == 0) {
 		printf("ZynCore->get_value_flag_zyncoder(%d): Invalid index!\n", i);
 		return 0;
 	}
 	return zyncoders[i].value_flag;
 }
 
-int set_value_zyncoder(uint8_t i, int32_t v) {
-	if (i>=MAX_NUM_ZYNCODERS || zyncoders[i].enabled==0) {
-		printf("ZynCore->set_value_zyncoder(%d, ...): Invalid index!\n", i);
+int set_value_zyncoder(uint8_t encoder, int32_t value) {
+	if (encoder >= MAX_NUM_ZYNCODERS || zyncoders[encoder].enabled == 0) {
+		printf("ZynCore->set_value_zyncoder(%d, ...): Invalid index!\n", encoder);
 		return 0;
 	}
-	zyncoder_t *zcdr = zyncoders + i;
+	zyncoder_t *zcdr = zyncoders + encoder;
 
-	if (zcdr->step==0) {
-		v*=ZYNCODER_TICKS_PER_RETENT;
-		if (v>zcdr->max_value) zcdr->subvalue=zcdr->max_value;
-		else if (v<zcdr->min_value) zcdr->subvalue=zcdr->min_value;
-		else zcdr->subvalue=v;
-		zcdr->value=zcdr->subvalue/ZYNCODER_TICKS_PER_RETENT;
-	} else {
-		if (v>zcdr->max_value) zcdr->value=zcdr->max_value;
-		else if (v<zcdr->min_value) zcdr->value=zcdr->max_value;
-		else zcdr->value=v;
-	}
-	//zcdr->value_flag = 1;
+	if (value > zcdr->max_value)
+		zcdr->value=zcdr->max_value;
+	else if (value < zcdr->min_value)
+		zcdr->value = zcdr->max_value;
+	else
+		zcdr->value=value;
+	zcdr->value_flag = 1;
 	return 1;
 }
 
@@ -529,9 +508,9 @@ int set_value_zyncoder(uint8_t i, int32_t v) {
 //-----------------------------------------------------------------------------
 
 void zynswitch_rbpi_ISR(uint8_t i) {
-	if (i>=MAX_NUM_ZYNSWITCHES) return;
+	if (i >= MAX_NUM_ZYNSWITCHES) return;
 	zynswitch_t *zsw = zynswitches + i;
-	if (zsw->enabled==0) return;
+	if (zsw->enabled == 0) return;
 	update_zynswitch(i, (uint8_t)digitalRead(zsw->pin));
 }
 
@@ -735,7 +714,7 @@ void zyncoder_mcp23017_update(uint8_t i) {
 	if (i>=MAX_NUM_ZYNSWITCHES) return;
 	zyncoder_t *zcdr = zyncoders + i;
 	if (zcdr->enabled==0) return;
-	
+
 	uint8_t base_pin = (zcdr->pin_a / 100) * 100;
 	struct wiringPiNodeStruct * wpns = wiringPiFindNode(base_pin);
 

@@ -1,15 +1,15 @@
 /*
  * ******************************************************************
  * ZYNTHIAN PROJECT: Zyncoder Library
- * 
- * Library for interfacing Rotary Encoders & Switches connected 
+ *
+ * Library for interfacing Rotary Encoders & Switches connected
  * to RBPi native GPIOs or expanded with MCP23008/MCP23017.
  * Includes an emulator mode for developing on desktop computers.
- * 
+ *
  * Copyright (C) 2015-2021 Fernando Moyano <jofemodo@zynthian.org>
  *
  * ******************************************************************
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License as
  * published by the Free Software Foundation; either version 2 of
@@ -21,7 +21,7 @@
  * GNU General Public License for more details.
  *
  * For a full copy of the GNU General Public License see the LICENSE.txt file.
- * 
+ *
  * ******************************************************************
  */
 
@@ -75,7 +75,7 @@ void reset_zynswitches();
 int get_num_zynswitches();
 int get_last_zynswitch_index();
 
-int setup_zynswitch(uint8_t i, uint8_t pin); 
+int setup_zynswitch(uint8_t i, uint8_t pin);
 int setup_zynswitch_midi(uint8_t i, midi_event_type midi_evt, uint8_t midi_chan, uint8_t midi_num, uint8_t midi_val);
 
 unsigned int get_zynswitch(uint8_t i, unsigned int long_dtus);
@@ -86,9 +86,6 @@ int get_next_pending_zynswitch(uint8_t i);
 //-----------------------------------------------------------------------------
 
 #define MAX_NUM_ZYNCODERS 4
-
-// Number of ticks per retent in rotary encoders
-#define ZYNCODER_TICKS_PER_RETENT 4
 
 typedef struct zyncoder_st {
 	uint8_t enabled;
@@ -103,14 +100,11 @@ typedef struct zyncoder_st {
 	// Next fields are zyncoder-specific
 	uint8_t pin_a;
 	uint8_t pin_b;
-	
 	uint8_t pin_a_last_state;
 	uint8_t pin_b_last_state;
-
-	unsigned int subvalue;
-	unsigned int last_encoded;
+	uint8_t code;
+	uint8_t count;
 	unsigned long tsus;
-	unsigned int dtus[ZYNCODER_TICKS_PER_RETENT];
 } zyncoder_t;
 zyncoder_t zyncoders[MAX_NUM_ZYNCODERS];
 

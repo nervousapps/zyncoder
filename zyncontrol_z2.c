@@ -129,7 +129,7 @@ void init_zynpots() {
 
 	int i;
 	for (i=0;i<4;i++) {
-		setup_zynpot(i,ZYNPOT_RV112,i);
+		setup_zynpot(i,ZYNPOT_RV112);
 	}
 }
 

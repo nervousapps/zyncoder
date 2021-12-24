@@ -168,7 +168,7 @@ void init_zynpots() {
 	for (i=0;i<NUM_ZYNPOTS;i++) {
 		if (zyncoder_pins_a[i]>0 && zyncoder_pins_b[i]>0) {
 			setup_zyncoder(i, zyncoder_pins_a[i], zyncoder_pins_b[i]);
-			setup_zynpot(i, ZYNPOT_ZYNCODER, i);
+			setup_zynpot(i, ZYNPOT_ZYNCODER);
 		}
 	}
 }

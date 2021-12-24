@@ -37,7 +37,7 @@
 
 void reset_zynpots() {
 	int i;
-	for (i=0;i<MAX_NUM_ZYNPOTS;i++) {
+	for (i = 0; i < MAX_NUM_ZYNPOTS; i++) {
 		zynpots[i].type = ZYNPOT_NONE;
 		zynpots[i].data = NULL;
 		zynpots[i].midi_chan = 0;
@@ -49,73 +49,74 @@ void reset_zynpots() {
 int get_num_zynpots() {
 	int i;
 	int n = 0;
-	for (i=0;i<MAX_NUM_ZYNPOTS;i++) {
-		if (zynpots[i].type!=ZYNPOT_NONE) n++;
+	for (i = 0; i < MAX_NUM_ZYNPOTS; i++) {
+		if (zynpots[i].type!=ZYNPOT_NONE)
+			n++;
 	}
 	return n;
 }
 
-int setup_zynpot(uint8_t i, uint8_t type, uint8_t ii) {
-	if (i>MAX_NUM_ZYNPOTS) {
-		printf("ZynCore: Zynpot index %d out of range!\n", i);
+int setup_zynpot(uint8_t zynpot, uint8_t type) {
+	if (zynpot > MAX_NUM_ZYNPOTS) {
+		printf("ZynCore: Zynpot index %d out of range!\n", zynpot);
 		return 0;
 	}
-	zynpots[i].type = type;
-	zynpots[i].i = ii;
+	zynpots[zynpot].type = type;
 	switch (type) {
 		case ZYNPOT_ZYNCODER:
-			zyncoders[i].zpot_i = i;
-			zynpots[i].data = (zynpot_data_t *) &zyncoders[ii];
-			zynpots[i].setup_rangescale = setup_rangescale_zyncoder;
-			zynpots[i].get_value = get_value_zyncoder;
-			zynpots[i].get_value_flag = get_value_flag_zyncoder;
-			zynpots[i].set_value = set_value_zyncoder;
+			zyncoders[zynpot].zpot_i = zynpot;
+			zynpots[zynpot].data = (zynpot_data_t *) &zyncoders[zynpot];
+			zynpots[zynpot].setup_rangescale = setup_rangescale_zyncoder;
+			zynpots[zynpot].get_value = get_value_zyncoder;
+			zynpots[zynpot].get_value_flag = get_value_flag_zyncoder;
+			zynpots[zynpot].set_value = set_value_zyncoder;
 			break;
 		case ZYNPOT_RV112:
-			rv112s[i].zpot_i = i;
-			zynpots[i].data = (zynpot_data_t *) &rv112s[ii];
-			zynpots[i].setup_rangescale = setup_rangescale_rv112;
-			zynpots[i].get_value = get_value_rv112;
-			zynpots[i].get_value_flag = get_value_flag_rv112;
-			zynpots[i].set_value = set_value_rv112;
+			rv112s[zynpot].zpot_i = zynpot;
+			zynpots[zynpot].data = (zynpot_data_t *) &rv112s[zynpot];
+			zynpots[zynpot].setup_rangescale = setup_rangescale_rv112;
+			zynpots[zynpot].get_value = get_value_rv112;
+			zynpots[zynpot].get_value_flag = get_value_flag_rv112;
+			zynpots[zynpot].set_value = set_value_rv112;
 			break;
 	}
 	return 1;
 }
 
-int setup_rangescale_zynpot(uint8_t i, int32_t min_value, int32_t max_value, int32_t value, int32_t step) {
-	if (i>MAX_NUM_ZYNPOTS || zynpots[i].type==ZYNPOT_NONE) {
-		printf("ZynCore: Zynpot index %d out of range!\n", i);
+int setup_rangescale_zynpot(uint8_t zynpot, int32_t min_value, int32_t max_value, int32_t value, int32_t step) {
+	if (zynpot > MAX_NUM_ZYNPOTS || zynpots[zynpot].type == ZYNPOT_NONE) {
+		printf("ZynCore: Zynpot index %d out of range!\n", zynpot);
 		return 0;
 	}
-	return zynpots[i].setup_rangescale(zynpots[i].i, min_value, max_value, value, step);
+	return zynpots[zynpot].setup_rangescale(zynpot, min_value, max_value, value, step);
 }
 
-int32_t get_value_zynpot(uint8_t i) {
-	if (i>=MAX_NUM_ZYNPOTS || zynpots[i].type==ZYNPOT_NONE) {
-		printf("ZynCore->get_value_zynpot(%d): Invalid index!\n", i);
+int32_t get_value_zynpot(uint8_t zynpot) {
+	if (zynpot >= MAX_NUM_ZYNPOTS || zynpots[zynpot].type == ZYNPOT_NONE) {
+		printf("ZynCore->get_value_zynpot(%d): Invalid index!\n", zynpot);
 		return 0;
 	}
-	zynpots[i].data->value_flag=0;
-	return zynpots[i].data->value;
+	zynpots[zynpot].data->value_flag = 0;
+	return zynpots[zynpot].data->value;
 }
 
-uint8_t get_value_flag_zynpot(uint8_t i) {
-	if (i>=MAX_NUM_ZYNPOTS || zynpots[i].type==ZYNPOT_NONE) {
-		printf("ZynCore->get_value_flag_zynpot(%d): Invalid index!\n", i);
+uint8_t get_value_flag_zynpot(uint8_t zynpot) {
+	if (zynpot >= MAX_NUM_ZYNPOTS || zynpots[zynpot].type == ZYNPOT_NONE) {
+		printf("ZynCore->get_value_flag_zynpot(%d): Invalid index!\n", zynpot);
 		return 0;
 	}
-	return zynpots[i].data->value_flag;
+	return zynpots[zynpot].data->value_flag;
 }
 
-int set_value_zynpot(uint8_t i, int32_t v, int send) {
-	if (i>=MAX_NUM_ZYNPOTS || zynpots[i].type==ZYNPOT_NONE) {
-		printf("ZynCore->set_value_zynpot(%d, %d, %d): Invalid index!\n", i, v, send);
+int set_value_zynpot(uint8_t zynpot, int32_t value, int send) {
+	if (zynpot >= MAX_NUM_ZYNPOTS || zynpots[zynpot].type == ZYNPOT_NONE) {
+		printf("ZynCore->set_value_zynpot(%d, %d, %d): Invalid index!\n", zynpot, value, send);
 		return 0;
 	}
-	zynpots[i].set_value(zynpots[i].i, v);
-	zynpots[i].data->value_flag=1;
-	if (send) send_zynpot(i);
+	zynpots[zynpot].set_value(zynpot, value);
+	zynpots[zynpot].data->value_flag = 1;
+	if (send)
+		send_zynpot(zynpot);
 	return 1;
 }
 
@@ -123,36 +124,36 @@ int set_value_zynpot(uint8_t i, int32_t v, int send) {
 // Zynpot MIDI & OSC API
 //-----------------------------------------------------------------------------
 
-int setup_midi_zynpot(uint8_t i, uint8_t midi_chan, uint8_t midi_cc) {
-	if (i>MAX_NUM_ZYNPOTS || zynpots[i].type==ZYNPOT_NONE) {
-		printf("ZynCore: Zynpot index %d out of range!\n", i);
+int setup_midi_zynpot(uint8_t zynpot, uint8_t midi_chan, uint8_t midi_cc) {
+	if (zynpot > MAX_NUM_ZYNPOTS || zynpots[zynpot].type == ZYNPOT_NONE) {
+		printf("ZynCore: Zynpot index %d out of range!\n", zynpot);
 		return 0;
 	}
-	zynpot_t *zpt = zynpots + i;
+	zynpot_t *zpt = zynpots + zynpot;
 
 	//Setup MIDI/OSC bindings
-	if (midi_chan>15) midi_chan=0;
-	if (midi_cc>127) midi_cc=1;
+	if (midi_chan > 15) midi_chan = 0;
+	if (midi_cc > 127) midi_cc = 1;
 	zpt->midi_chan = midi_chan;
 	zpt->midi_cc = midi_cc;
 
 	return 1;
 }
 
-int setup_osc_zynpot(uint8_t i, char *osc_path) {
-	if (i>MAX_NUM_ZYNPOTS || zynpots[i].type==ZYNPOT_NONE) {
-		printf("ZynCore: Zynpot index %d out of range!\n", i);
+int setup_osc_zynpot(uint8_t zynpot, char *osc_path) {
+	if (zynpot > MAX_NUM_ZYNPOTS || zynpots[zynpot].type == ZYNPOT_NONE) {
+		printf("ZynCore: Zynpot index %d out of range!\n", zynpot);
 		return 0;
 	}
-	zynpot_t *zpt = zynpots + i;
+	zynpot_t *zpt = zynpots + zynpot;
 
 	//printf("OSC PATH: %s\n",osc_path);
 	if (osc_path) {
 		char *saveptr;
-		char *osc_port_str=strtok_r(osc_path, ":", &saveptr);
-		zpt->osc_port=atoi(osc_port_str);
-		if (zpt->osc_port>0) {
-			zpt->osc_lo_addr=lo_address_new(NULL, osc_port_str);
+		char *osc_port_str = strtok_r(osc_path, ":", &saveptr);
+		zpt->osc_port = atoi(osc_port_str);
+		if (zpt->osc_port > 0) {
+			zpt->osc_lo_addr = lo_address_new(NULL, osc_port_str);
 			strcpy(zpt->osc_path, strtok_r(NULL, ":", &saveptr));
 		} else {
 			zpt->osc_path[0] = 0;
@@ -163,24 +164,24 @@ int setup_osc_zynpot(uint8_t i, char *osc_path) {
 	return 1;
 }
 
-int send_zynpot(uint8_t i) {
-	if (i>=MAX_NUM_ZYNPOTS || zynpots[i].type==ZYNPOT_NONE) {
-		printf("ZynCore->send_zynpot(%d): Invalid index!\n", i);
+int send_zynpot(uint8_t zynpot) {
+	if (zynpot >= MAX_NUM_ZYNPOTS || zynpots[zynpot].type == ZYNPOT_NONE) {
+		printf("ZynCore->send_zynpot(%d): Invalid index!\n", zynpot);
 		return 0;
 	}
-	zynpot_t *zpt = zynpots + i;
+	zynpot_t *zpt = zynpots + zynpot;
 
-	if (zpt->midi_cc>0) {
+	if (zpt->midi_cc > 0) {
 		int32_t value = zpt->data->value;
 		//Send to MIDI output
 		internal_send_ccontrol_change(zpt->midi_chan, zpt->midi_cc, value);
 		//Send to MIDI controller feedback => TODO: Reverse Mapping!!
 		//ctrlfb_send_ccontrol_change(zpt->midi_chan, zpt->midi_cc, value);
 		//printf("ZynCore: SEND MIDI CH#%d, CTRL %d = %d\n",zpt->midi_chan, zpt->midi_cc, value);
-	} else if (zpt->osc_lo_addr!=NULL && zpt->osc_path[0]) {
+	} else if (zpt->osc_lo_addr != NULL && zpt->osc_path[0]) {
 		int32_t value = zpt->data->value;
 		if (zpt->data->step >= 8) {
-			if (value>=64) {
+			if (value >= 64) {
 				lo_send(zpt->osc_lo_addr, zpt->osc_path, "T");
 				//printf("SEND OSC %s => T\n",zyncoder->osc_path);
 			} else {
@@ -198,9 +199,9 @@ int send_zynpot(uint8_t i) {
 //Update zyncoder value => TODO Optimize this function!
 int midi_event_zynpot(uint8_t midi_chan, uint8_t midi_cc, uint8_t val) {
 	int i;
-	for (i=0;i<MAX_NUM_ZYNPOTS;i++) {
-		if (zynpots[i].type && zynpots[i].midi_chan==midi_chan && zynpots[i].midi_cc==midi_cc) {
-			zynpots[i].set_value(zynpots[i].i, val);
+	for (i = 0; i < MAX_NUM_ZYNPOTS; i++) {
+		if (zynpots[i].type && zynpots[i].midi_chan == midi_chan && zynpots[i].midi_cc == midi_cc) {
+			zynpots[i].set_value(i, val);
 			//TODO VERIFY THIS WORKS OK!!!
 			//zyncoders[j].value=val;
 			//zyncoders[j].subvalue=val*ZYNCODER_TICKS_PER_RETENT;

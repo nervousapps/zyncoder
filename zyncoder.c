@@ -459,30 +459,33 @@ int setup_rangescale_zyncoder(uint8_t encoder, int32_t min_value, int32_t max_va
 		zcdr->inv = 0;
 	}
 
-	if (value > max_value) value = max_value;
-	else if (value < min_value) value = min_value;
+	if (value > max_value)
+		value = max_value;
+	else if (value < min_value)
+		value = min_value;
 
 	zcdr->step = step;
 	zcdr->value = value;
 	zcdr->min_value = min_value;
 	zcdr->max_value = max_value;
+	return 1;
 }
 
-int32_t get_value_zyncoder(uint8_t i) {
-	if (i >= MAX_NUM_ZYNCODERS || zyncoders[i].enabled == 0) {
-		printf("ZynCore->get_value_zyncoder(%d): Invalid index!\n", i);
+int32_t get_value_zyncoder(uint8_t encoder) {
+	if (encoder >= MAX_NUM_ZYNCODERS || zyncoders[encoder].enabled == 0) {
+		printf("ZynCore->get_value_zyncoder(%d): Invalid index!\n", encoder);
 		return 0;
 	}
-	zyncoders[i].value_flag = 0;
-	return zyncoders[i].value;
+	zyncoders[encoder].value_flag = 0;
+	return zyncoders[encoder].value;
 }
 
-uint8_t get_value_flag_zyncoder(uint8_t i) {
-	if (i >= MAX_NUM_ZYNCODERS || zyncoders[i].enabled == 0) {
-		printf("ZynCore->get_value_flag_zyncoder(%d): Invalid index!\n", i);
+uint8_t get_value_flag_zyncoder(uint8_t encoder) {
+	if (encoder >= MAX_NUM_ZYNCODERS || zyncoders[encoder].enabled == 0) {
+		printf("ZynCore->get_value_flag_zyncoder(%d): Invalid index!\n", encoder);
 		return 0;
 	}
-	return zyncoders[i].value_flag;
+	return zyncoders[encoder].value_flag;
 }
 
 int set_value_zyncoder(uint8_t encoder, int32_t value) {

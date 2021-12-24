@@ -112,14 +112,50 @@ zyncoder_t zyncoders[MAX_NUM_ZYNCODERS];
 // Zyncoder's zynpot API
 //-----------------------------------------------------------------------------
 
+/** @brief  Reset all encoders to default configuration
+*/
 void reset_zyncoders();
+
+/** @brief  Get quantity of enabled encoders
+*   @retval int Quantity of enabled encoders [0..MAX_NUM_ZYNCODERS]
+*/
 int get_num_zyncoders();
 
-int setup_zyncoder(uint8_t i, uint8_t pin_a, uint8_t pin_b);
-int setup_rangescale_zyncoder(uint8_t i, int32_t min_value, int32_t max_value, int32_t value, int32_t step);
+/** @brief  Assign GPI pins to encoder
+*   @param  encoder Index of encoder [0..MAX_NUM_ZYNCODERS]
+*   @param  pin_a GPI assigned to encoder clock pin
+*   @param  pin_b GPI assigned to encoder data pin
+*   @retval int 1 on success, 0 on failure
+*/
+int setup_zyncoder(uint8_t encoder, uint8_t pin_a, uint8_t pin_b);
 
-int32_t get_value_zyncoder(uint8_t i);
-uint8_t get_value_flag_zyncoder(uint8_t i);
-int set_value_zyncoder(uint8_t i, int32_t v);
+/** @brief  Configure encoder
+*   @param  encoder Index of encoder [0..MAX_NUM_ZYNCODERS]
+*   @param  min_value Lower bound of value range
+*   @param  max_value Upper bound of value range
+*   @param  value Current value to assign to encoder
+*   @param  step Size of change in value for each detent of encoder
+*   @retval int 1 on success, 0 on failure
+*/
+int setup_rangescale_zyncoder(uint8_t encoder, int32_t min_value, int32_t max_value, int32_t value, int32_t step);
+
+/** @brief  Get current value
+*   @param  encoder Index of encoder [0..MAX_NUM_ZYNCODERS]
+*   @retval int32_t Current value
+*/
+int32_t get_value_zyncoder(uint8_t encoder);
+
+/** @brief  Check if value has changed since last read
+*   @param  encoder Index of encoder [0..MAX_NUM_ZYNCODERS]
+*   @retval uint8_t 1 if value changed since last read.
+*/
+uint8_t get_value_flag_zyncoder(uint8_t encoder);
+
+/** @brief  Set value
+*   @param  encoder Index of encoder
+*   @param  value New value
+*   @retval int 1 on success. 0 on failure
+*/
+int set_value_zyncoder(uint8_t encoder, int32_t value);
 
 //-----------------------------------------------------------------------------

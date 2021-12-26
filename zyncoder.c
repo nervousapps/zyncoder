@@ -62,11 +62,28 @@
 // Function headers
 //-----------------------------------------------------------------------------
 
+/*	Sends a MIDI event triggered by change of switch state
+*	zsw	Pointer to switch object
+*	status Switch state
+*/
 void send_zynswitch_midi(zynswitch_t *zsw, uint8_t status);
 
+/*	Interrupt service routine handling change of state of GPI
+*	i Index of switch
+*/
 void zynswitch_rbpi_ISR(uint8_t i);
+
+/*	Array of interrupt service routines handling change of state of switch GPI
+*/
 void (*zynswitch_rbpi_ISRs[]);
+
+/*	Interrupt service routine handling change of state of encoder GPI
+*	i Index of encoder
+*/
 void zyncoder_rbpi_ISR(uint8_t i);
+
+/*	Array of interrupt service routines handling change of state of encoder GPI
+*/
 void (*zyncoder_rbpi_ISRs[]);
 
 void zynswitch_mcp23017_update(uint8_t i);
@@ -116,43 +133,51 @@ int get_last_zynswitch_index() {
 	return li;
 }
 
-void update_zynswitch(uint8_t i, uint8_t status) {
-	zynswitch_t *zsw = zynswitches + i;
+/*	Called by physical read function to update status of zynswitch
+	zynswitch Index of switch
+	status New switch status
+*/
+void update_zynswitch(uint8_t zynswitch, uint8_t status) {
+	zynswitch_t *zsw = zynswitches + zynswitch;
 
-	if (status==zsw->status) return;
-	zsw->status=status;
+	if (status == zsw->status)
+		return;
+	zsw->status = status; //!@todo Should we be setting state here before debounce? Might be noise.
 
 	//printf("SWITCH ISR %d => STATUS=%d\n",i,status);
 
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	unsigned long int tsus=ts.tv_sec*1000000 + ts.tv_nsec/1000;
+	unsigned long int tsus = ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
 
 	//printf("SWITCH ISR %d => STATUS=%d (%lu)\n",i,zsw->status,tsus);
-	if (zsw->status==1) {
-		if (zsw->tsus>0) {
-			unsigned int dtus=tsus-zsw->tsus;
-			zsw->tsus=0;
+	if (zsw->status == 1) {
+		// Switch is open
+		if (zsw->tsus > 0) {
+			unsigned int dtus = tsus - zsw->tsus;
+			zsw->tsus = 0;
 			//Ignore spurious clicks (SW debouncing)
-			if (dtus<1000) return;
+			if (dtus < 1000) //!@todo 1ms is too short for some switches, recommend increasing debounce to at least 2ms, 10ms may be better for physical switches
+				return;
 			//printf("Debounced Switch %d\n",i);
-			zsw->dtus=dtus;
+			zsw->dtus = dtus; // Set duration of last switch closure if >1ms
 		}
 	} else {
+		// Switch closed
 		// Save push timestamp
-		zsw->tsus=tsus;
+		zsw->tsus = tsus;
 		// Send MIDI when pushed => no SW debouncing!!
-		send_zynswitch_midi(zsw, status);
+		send_zynswitch_midi(zsw, status); //!@todo Without debouncing, MIDI could be sent several times for each switch closure
 	}
 }
 
-int setup_zynswitch(uint8_t i, uint8_t pin) {
-	if (i >= MAX_NUM_ZYNSWITCHES) {
-		printf("ZynCore->setup_zynswitch(%d, ...): Invalid index!\n", i);
+int setup_zynswitch(uint8_t zynswitch, uint8_t pin) {
+	if (zynswitch >= MAX_NUM_ZYNSWITCHES) {
+		printf("ZynCore->setup_zynswitch(%d, ...): Invalid index!\n", zynswitch);
 		return 0;
 	}
 
-	zynswitch_t *zsw = zynswitches + i;
+	zynswitch_t *zsw = zynswitches + zynswitch;
 	zsw->enabled = 1;
 	zsw->pin = pin;
 	zsw->tsus = 0;
@@ -165,25 +190,25 @@ int setup_zynswitch(uint8_t i, uint8_t pin) {
 
 		// RBPi GPIO pin
 		if (pin<100) {
-			wiringPiISR(pin,INT_EDGE_BOTH, zynswitch_rbpi_ISRs[i]);
-			zynswitch_rbpi_ISR(i);
+			wiringPiISR(pin,INT_EDGE_BOTH, zynswitch_rbpi_ISRs[zynswitch]);
+			zynswitch_rbpi_ISR(zynswitch);
 		}
 		// MCP23017 pin
 		else if (pin>=100) {
-			zynswitch_mcp23017_update(i);
+			zynswitch_mcp23017_update(zynswitch);
 		}
 	}
 
 	return 1;
 }
 
-int setup_zynswitch_midi(uint8_t i, enum midi_event_type_enum midi_evt, uint8_t midi_chan, uint8_t midi_num, uint8_t midi_val) {
-	if (i >= MAX_NUM_ZYNSWITCHES) {
-		printf("ZynCore->setup_zynswitch_midi(%d, ...): Invalid index!\n", i);
+int setup_zynswitch_midi(uint8_t zynswitch, enum midi_event_type_enum midi_evt, uint8_t midi_chan, uint8_t midi_num, uint8_t midi_val) {
+	if (zynswitch >= MAX_NUM_ZYNSWITCHES || midi_chan > 15 || midi_num > 127 || midi_val > 127) {
+		printf("ZynCore->setup_zynswitch_midi(%d, ...): Invalid index or MIDI parameters!\n", zynswitch);
 		return 0;
 	}
 
-	zynswitch_t *zsw = zynswitches + i;
+	zynswitch_t *zsw = zynswitches + zynswitch;
 	zsw->midi_event.type = midi_evt;
 	zsw->midi_event.chan = midi_chan;
 	zsw->midi_event.num = midi_num;
@@ -202,36 +227,33 @@ int setup_zynswitch_midi(uint8_t i, enum midi_event_type_enum midi_evt, uint8_t 
 	return 1;
 }
 
-unsigned int get_zynswitch_dtus(uint8_t i, unsigned int long_dtus) {
-	unsigned int dtus=zynswitches[i].dtus;
-	if (dtus>0) {
-		zynswitches[i].dtus=0;
+unsigned int get_zynswitch(uint8_t zynswitch, unsigned int long_dtus) {
+	if (zynswitch >= MAX_NUM_ZYNSWITCHES) {
+		printf("ZynCore->get_zynswitch_dtus(%d, ...): Invalid index!\n", zynswitch);
+		return 0;
+	}
+	unsigned int dtus = zynswitches[zynswitch].dtus;
+	if (dtus > 0) {
+		zynswitches[zynswitch].dtus = 0;
 		return dtus;
 	}
-	else if (zynswitches[i].tsus>0) {
+	else if (zynswitches[zynswitch].tsus > 0) {
 		struct timespec ts;
 		clock_gettime(CLOCK_MONOTONIC, &ts);
-		dtus=ts.tv_sec*1000000 + ts.tv_nsec/1000 - zynswitches[i].tsus;
-		if (dtus>long_dtus) {
-			zynswitches[i].tsus=0;
+		dtus = ts.tv_sec * 1000000 + ts.tv_nsec / 1000 - zynswitches[zynswitch].tsus;
+		if (dtus > long_dtus) {
+			zynswitches[zynswitch].tsus = 0;
 			return dtus;
 		}
 	}
 	return 0;
 }
 
-unsigned int get_zynswitch(uint8_t i, unsigned int long_dtus) {
-	if (i >= MAX_NUM_ZYNSWITCHES) {
-		printf("ZynCore->get_zynswitch_dtus(%d, ...): Invalid index!\n", i);
-		return 0;
-	}
-	return get_zynswitch_dtus(i, long_dtus);
-}
-
-int get_next_pending_zynswitch(uint8_t i) {
-	while (i<MAX_NUM_ZYNSWITCHES) {
-		if (zynswitches[i].dtus>0 || zynswitches[i].tsus>0) return (int)i;
-		i++;
+int get_next_pending_zynswitch(uint8_t zynswitch) {
+	while (zynswitch < MAX_NUM_ZYNSWITCHES) {
+		if (zynswitches[zynswitch].dtus > 0 || zynswitches[zynswitch].tsus > 0)
+			return (int)zynswitch;
+		zynswitch++;
 	}
 	return -1;
 }
@@ -267,14 +289,16 @@ void send_zynswitch_midi(zynswitch_t *zsw, uint8_t status) {
 		}
 	}
 	#ifdef ZYNAPTIK_CONFIG
-	else if (zsw->midi_event.type==CVGATE_IN_EVENT && zsw->midi_event.num<4) {
-		if (status==0) {
+	else if (zsw->midi_event.type == CVGATE_IN_EVENT && zsw->midi_event.num < 4) {
+		if (status == 0) {
 			pthread_mutex_lock(&zynaptik_cvin_lock);
-			int val=analogRead(ZYNAPTIK_ADS1115_BASE_PIN + zsw->midi_event.num);
+			int val = analogRead(ZYNAPTIK_ADS1115_BASE_PIN + zsw->midi_event.num);
 			pthread_mutex_unlock(&zynaptik_cvin_lock);
-			zsw->last_cvgate_note=(int)((k_cvin*6.144/(5.0*256.0))*val);
-			if (zsw->last_cvgate_note>127) zsw->last_cvgate_note=127;
-			else if (zsw->last_cvgate_note<0) zsw->last_cvgate_note=0;
+			zsw->last_cvgate_note = (int)((k_cvin * 6.144 / (5.0 * 256.0)) * val);
+			if (zsw->last_cvgate_note > 127)
+				zsw->last_cvgate_note = 127;
+			else if (zsw->last_cvgate_note < 0)
+				zsw->last_cvgate_note = 0;
 			//Send MIDI event to engines and ouput (ZMOPS)
 			internal_send_note_on(zsw->midi_event.chan, (uint8_t)zsw->last_cvgate_note, zsw->midi_event.val);
 			//Send MIDI event to UI
@@ -364,15 +388,10 @@ void update_zyncoder(uint8_t encoder, uint8_t msb, uint8_t lsb) {
 		unsigned long int tsus;
 		clock_gettime(CLOCK_MONOTONIC, &ts);
 		tsus = ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
-		long dtus = tsus - zcdr->tsus;
-		//Ignore spurious ticks
-		//Calculate step value
-		/*	If time since last tick is large then single step
-			If time since last tick is small then scale step inversly to time, i.e. by speed
-		*/
+		long dtus = tsus - zcdr->tsus; // microseconds since last encoder change
+		// Rotation acceleration
 		if (dtus < 100000)
 			dval = (((100000 - dtus) / 10000) + 1) * dir;
-
 		zcdr->tsus = (unsigned long)tsus;
 	}
 	int32_t value = zcdr->value + dval;
@@ -511,9 +530,11 @@ int set_value_zyncoder(uint8_t encoder, int32_t value) {
 //-----------------------------------------------------------------------------
 
 void zynswitch_rbpi_ISR(uint8_t i) {
-	if (i >= MAX_NUM_ZYNSWITCHES) return;
+	if (i >= MAX_NUM_ZYNSWITCHES)
+		return;
 	zynswitch_t *zsw = zynswitches + i;
-	if (zsw->enabled == 0) return;
+	if (zsw->enabled == 0)
+		return;
 	update_zynswitch(i, (uint8_t)digitalRead(zsw->pin));
 }
 
@@ -525,7 +546,7 @@ void zynswitch_rbpi_ISR_4() { zynswitch_rbpi_ISR(4); }
 void zynswitch_rbpi_ISR_5() { zynswitch_rbpi_ISR(5); }
 void zynswitch_rbpi_ISR_6() { zynswitch_rbpi_ISR(6); }
 void zynswitch_rbpi_ISR_7() { zynswitch_rbpi_ISR(7); }
-void (*zynswitch_rbpi_ISRs[8])={
+void (*zynswitch_rbpi_ISRs[])={
 	zynswitch_rbpi_ISR_0,
 	zynswitch_rbpi_ISR_1,
 	zynswitch_rbpi_ISR_2,
@@ -548,7 +569,7 @@ void zyncoder_rbpi_ISR_0() { zyncoder_rbpi_ISR(0); }
 void zyncoder_rbpi_ISR_1() { zyncoder_rbpi_ISR(1); }
 void zyncoder_rbpi_ISR_2() { zyncoder_rbpi_ISR(2); }
 void zyncoder_rbpi_ISR_3() { zyncoder_rbpi_ISR(3); }
-void (*zyncoder_rbpi_ISRs[8])={
+void (*zyncoder_rbpi_ISRs[])={
 	zyncoder_rbpi_ISR_0,
 	zyncoder_rbpi_ISR_1,
 	zyncoder_rbpi_ISR_2,

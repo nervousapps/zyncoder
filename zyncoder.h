@@ -59,27 +59,64 @@ pthread_t init_poll_zynswitches();
 #define MAX_NUM_ZYNSWITCHES 36
 
 typedef struct zynswitch_st {
-	uint8_t enabled;
-	uint8_t pin;
-	unsigned long tsus;
-	unsigned int dtus;
+	uint8_t enabled;            // 1 if switch enabled
+	uint8_t pin;                // Index of GPI switch attached to
+	unsigned long tsus;         // Absolute time in ms when switch closed
+	unsigned int dtus;          // Duration of switch closure in us
 	// note that this status is like the pin_[ab]_last_state for the zyncoders
-	uint8_t status;
+	uint8_t status;             // Current switch state [0:closed, 1:open]
 
-	midi_event_t midi_event;
-	int last_cvgate_note;
+	midi_event_t midi_event;    // MIDI event type triggered by switch
+	int last_cvgate_note;       // MIDI note last triggered by cv/gate [0..127]
 } zynswitch_t;
+
 zynswitch_t zynswitches[MAX_NUM_ZYNSWITCHES];
 
+/** @brief  Reset all zynswitches to default state
+*/
 void reset_zynswitches();
+
+/** @brief Get quantity of enabled switches
+*   @retval int Quantity of enabled switches
+*/
 int get_num_zynswitches();
+
+/** @brief  Get highest index of enabled switches
+*   @retval int Index of last enabled switch
+*   @todo   Does this have any use or benefit?
+*/
 int get_last_zynswitch_index();
 
-int setup_zynswitch(uint8_t i, uint8_t pin);
-int setup_zynswitch_midi(uint8_t i, midi_event_type midi_evt, uint8_t midi_chan, uint8_t midi_num, uint8_t midi_val);
+/** @brief  Configure switch
+*   @param  zynswitch Index of switch
+*   @param  pin GPI pin assigned to switch
+*   @retval int 1 on success, 0 on failure
+*/
+int setup_zynswitch(uint8_t zynswitch, uint8_t pin);
 
-unsigned int get_zynswitch(uint8_t i, unsigned int long_dtus);
-int get_next_pending_zynswitch(uint8_t i);
+/** @brief  Assign MIDI event to be triggered by switch
+*   @param  zynswitch Index of switch [0..MAX_NUM_ZYNSWITCHES]
+*   @param  midi_evt MIDI command type [0..127]
+*   @param  midi_chan MIDI channel [0..15]
+*   @param  midi_num MIDI CC number [0..127]
+*   @param  midi_val MIDI value [0..127]
+*   @retval int 1 on success, 0 on failure
+*/
+int setup_zynswitch_midi(uint8_t zynswitch, midi_event_type midi_evt, uint8_t midi_chan, uint8_t midi_num, uint8_t midi_val);
+
+/** @brief  Get duration of switch closure
+*   @param  zynswitch Index of switch [0..MAX_NUM_ZYNSWITCHES]
+*   @param  long_dtus Duration in us of long press afterwhich switch is deemed open even if still closed
+*   @retval unsigned int Duration of switch closure in ms or 0 if switch open
+*   @note   After period defined by long_dtus a switch open state is identified to allow long switch closure to trigger event
+*/
+unsigned int get_zynswitch(uint8_t zynswitch, unsigned int long_dtus);
+
+/** @brief  Get index of next switch that is (or has recently been) closed
+*   @param  zynswitch Index of switch from which to start search [0..MAX_NUM_ZYNSWITCHES]
+*   @retval int Index of next closed switch or -1 if all open
+*/
+int get_next_pending_zynswitch(uint8_t zynswitch);
 
 //-----------------------------------------------------------------------------
 // Zyncoder data (Incremental Rotary Encoders)
@@ -88,23 +125,23 @@ int get_next_pending_zynswitch(uint8_t i);
 #define MAX_NUM_ZYNCODERS 4
 
 typedef struct zyncoder_st {
-	uint8_t enabled;
-	int32_t min_value;
-	int32_t max_value;
-	int32_t step;
-	uint8_t inv;
-	int32_t value;
-	uint8_t value_flag;
-	int8_t zpot_i;
+	uint8_t enabled;            // 1 to enable encoder
+	int32_t min_value;          // Upper range value
+	int32_t max_value;          // Lower range value
+	int32_t step;               // Size of change in value for each detent of encoder
+	uint8_t inv;                // 1 to invert range
+	int32_t value;              // Current encdoder value [min_value..max_value]
+	uint8_t value_flag;         // 1 if value changed since last read
+	int8_t zpot_i;              // Zynpot index assigned to this encoder
 
 	// Next fields are zyncoder-specific
-	uint8_t pin_a;
-	uint8_t pin_b;
-	uint8_t pin_a_last_state;
-	uint8_t pin_b_last_state;
-	uint8_t code;
-	uint8_t count;
-	unsigned long tsus;
+	uint8_t pin_a;              // Data GPI
+	uint8_t pin_b;              // Clock GPI
+	uint8_t pin_a_last_state;   // Value of data GPI before current read
+	uint8_t pin_b_last_state;   // Value of clock GPI before current read
+	uint8_t code;               // Quadrant encoder algorithm current value
+	uint8_t count;              // Quadrant encoder algorithm current count
+	unsigned long tsus;         // Absolute time of last encoder change in microseconds
 } zyncoder_t;
 zyncoder_t zyncoders[MAX_NUM_ZYNCODERS];
 

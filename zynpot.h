@@ -36,27 +36,27 @@
 #define MAX_NUM_ZYNPOTS 4
 
 typedef struct zynpot_data_st {
-	uint8_t enabled;
-	int32_t min_value;
-	int32_t max_value;
-	int32_t step;
-	uint8_t inv;
-	int32_t value;
-	uint8_t value_flag;
-	int8_t zpot_i;
+	uint8_t enabled;            // 1 to enable encoder
+	int32_t min_value;          // Upper range value
+	int32_t max_value;          // Lower range value
+	int32_t step;               // Size of change in value for each detent of encoder
+	uint8_t inv;                // 1 to invert range
+	int32_t value;              // Current encdoder value [min_value..max_value]
+	uint8_t value_flag;         // 1 if value changed since last read
+	int8_t zpot_i;              // Zynpot index assigned to this encoder
 } zynpot_data_t;
 
 
 typedef struct zynpot_st {
-	uint8_t type;
-	zynpot_data_t *data;
+	uint8_t type;               // Type of encoder [#define ZYNPOT_NONE | ZYNPOT_ZYNCODER | define ZYNPOT_RV112]
+	zynpot_data_t *data;        // Pointer to instance of zynpot_data_t structure
 
-	uint8_t midi_chan;
-	uint8_t midi_cc;
+	uint8_t midi_chan;          // MIDI channel to send CC messages
+	uint8_t midi_cc;            // MIDI CC number
 
-	uint16_t osc_port;
-	lo_address osc_lo_addr;
-	char osc_path[512];
+	uint16_t osc_port;          // OSC UDP port
+	lo_address osc_lo_addr;     // OSC desintation address (only one?)
+	char osc_path[512];         // OSC path
 
 	// Function pointers
 	int (*setup_rangescale)(uint8_t, int32_t, int32_t, int32_t, int32_t);

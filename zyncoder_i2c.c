@@ -34,10 +34,17 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <linux/i2c-dev.h>
+
 #include "zyncoder_i2c.h"
 #include "zynmidirouter.h"
 
-#include <wiringPi.h>
+// #include <wiringPi.h>
+
+#include <pigpio.h>
 
 #define DEBUG
 
@@ -80,10 +87,25 @@ int init_zyncoder() {
 	for (i=0;i<MAX_NUM_ZYNCODERS;i++) {
 		zyncoders[i].enabled=0;
 	}
-	wiringPiSetup();
-	hwci2c_fd = wiringPiI2CSetup(HWC_ADDR);
-	wiringPiI2CWriteReg8(hwci2c_fd, 0, 0); // Reset HWC
-	wiringPiISR(INTERRUPT_PIN, INT_EDGE_FALLING, handleRibanHwc);
+
+	if (gpioInitialise() <0 ) {
+		printf("Fail to initialize PIGPIO !\n");
+		return -1;
+	}
+	
+	i2c = open("/dev/i2c-1", O_RDWR);
+
+	// Initialize buttons
+	for(int i=0; i<4; i++) {
+		gpioSetMode(PATCH_BCM_PINS[i] , PI_INPUT);
+		gpioSetPullUpDown(PATCH_BCM_PINS[i] , PI_PUD_UP);
+		gpioGlitchFilter(PATCH_BCM_PINS[i] , 1000);
+		gpioNoiseFilter(PATCH_BCM_PINS[i] , 3000, 10000);
+		gpioSetAlertFunc(PATCH_BCM_PINS[i], readNsButtonHandler);
+	}
+
+	pthread_t inputsThreadId ;
+	pthread_create (&inputsThreadId, NULL, &readNsInputsThread, NULL) ;
 	return 1;
 }
 
@@ -338,7 +360,7 @@ void set_value_zyncoder(uint8_t i, unsigned int v, int send) {
 	if (send) send_zyncoder(i);
 }
 
-#include <wiringPiI2C.h>
+// #include <wiringPiI2C.h>
 /** Called when an interrupt signal detected from riban HWC.
     Interrupt indicates a change has occured on HWC hence there is data to read.
     Must read one byte from HWC register 0 to detect the control that has changed then read that control's value.
@@ -351,33 +373,129 @@ void set_value_zyncoder(uint8_t i, unsigned int v, int send) {
 /** @brief  Handle I2C hardware controller interrupt signal
 *   @note   Reads all changed controls, updates switches and encoders and triggers events
 */
-void handleRibanHwc() {
-    //loop until all HWC changes are read
-    int i;
-    uint8_t reg;
-    while(reg = wiringPiI2CRead(hwci2c_fd)) {
-        int16_t nValue = wiringPiI2CReadReg16(hwci2c_fd, reg);
-        for(i=0; i<MAX_NUM_ZYNCODERS; i++) {
-            struct zyncoder_st *zyncoder = zyncoders + i;
-            if(zyncoder->enabled==0 || zyncoder->index != reg)
-                continue;
-            if(zyncoder->step)
-                nValue *= ZYNCODER_TICKS_PER_RETENT * zyncoder->step;
-            nValue += zyncoder->value;
-            if(nValue < 0)
-                nValue = 0;
-            if(nValue > zyncoder->max_value)
-                nValue = zyncoder->max_value;
-            zyncoder->value = nValue;
-            send_zyncoder(i);
-            break;
-        }
-        for(i=0; i<MAX_NUM_ZYNSWITCHES; i++) {
-            struct zynswitch_st *zynswitch = zynswitches + i;
-            if(zynswitch->enabled == 0 || zynswitch->index != reg)
-                continue;
-            update_zynswitch(i, nValue?0:1); // Have to invert switch value because zyncoder uses active low switch values
+// void handleRibanHwc() {
+//     //loop until all HWC changes are read
+//     int i;
+//     uint8_t reg;
+//     while(reg = wiringPiI2CRead(hwci2c_fd)) {
+//         int16_t nValue = wiringPiI2CReadReg16(hwci2c_fd, reg);
+//         for(i=0; i<MAX_NUM_ZYNCODERS; i++) {
+//             struct zyncoder_st *zyncoder = zyncoders + i;
+//             if(zyncoder->enabled==0 || zyncoder->index != reg)
+//                 continue;
+//             if(zyncoder->step)
+//                 nValue *= ZYNCODER_TICKS_PER_RETENT * zyncoder->step;
+//             nValue += zyncoder->value;
+//             if(nValue < 0)
+//                 nValue = 0;
+//             if(nValue > zyncoder->max_value)
+//                 nValue = zyncoder->max_value;
+//             zyncoder->value = nValue;
+//             send_zyncoder(i);
+//             break;
+//         }
+//         for(i=0; i<MAX_NUM_ZYNSWITCHES; i++) {
+//             struct zynswitch_st *zynswitch = zynswitches + i;
+//             if(zynswitch->enabled == 0 || zynswitch->index != reg)
+//                 continue;
+//             update_zynswitch(i, nValue?0:1); // Have to invert switch value because zyncoder uses active low switch values
+//             break;
+//         }
+//     }
+// }
+
+void readNsInputsThread(){
+	while(1) {
+		if(i2c < 0){
+			continue;
+		}
+
+		// Switch to the MCU address.
+		if(ioctl(i2c, I2C_SLAVE, MCU_I2C_ADDR) < 0){
+			continue;
+		}
+
+		// Issue an SMBus read from address 0.
+		uint8_t buf[1] = {0};
+		if(write(i2c, buf, 1) != 1){
+			continue;
+		}
+
+		// Read the whole inputs message from the MCU.
+		struct InputsMessage message;
+		if(read(i2c, &message, sizeof(message)) != sizeof(message)){
+			continue;
+		}
+
+		// Check the checksum.
+		uint32_t *src = (uint32_t *)(&message);
+		uint32_t chk = 0xaa55aa55;
+		chk += src[0];
+		chk += src[1];
+		chk += src[2];
+		if(chk != message.chk){
+			continue;
+		}
+
+		int j = 0;
+		for(int i=0; i<4; i++) {
+			j = i;
+			if (i == 1){
+				j = 2;
+			}
+			if (i == 2){
+				j = 1;
+			}
+			struct zyncoder_st *zyncoder = zyncoders + j;
+			int8_t delta = message.rotaries[i] - lastInputsMessage.rotaries[i];
+			int16_t nValue = zyncoder->value;
+			if (delta != 0){
+				if(delta > 0)
+					nValue += 1;
+				if(delta < 0)
+					nValue -= 1;
+				if(nValue < 0)
+					nValue = 0;
+				if(nValue > zyncoder->max_value)
+					nValue = zyncoder->max_value;
+				zyncoder->value = nValue;
+				send_zyncoder(i);
+			}
+		}
+
+		for(int i=0; i<6; i++) {
+			struct zyncoder_st *zyncoder = zyncoders + i;
+			if (message.potentiometers[i]/2 != lastInputsMessage.potentiometers[i]/2){
+				printf("############### \n");
+				printf("%d", message.potentiometers[i]/2);
+				printf("%d", zyncoder->midi_chan);
+				printf("%d", i+60);
+				printf("############### \n");
+				write_zynmidi_ccontrol_change(1, i+60, message.potentiometers[i]/2);
+			}
+		}
+
+		for(int i=0; i<2; i++) {
+			if (message.touch[i] != lastInputsMessage.touch[i] && message.touch[i] != 255){
+				printf("############### \n");
+				printf("%d", message.touch[i]);
+				printf("############### \n");
+			}
+		}
+
+		lastInputsMessage = message;
+		time_sleep(0.05);
+	}
+}
+
+void readNsButtonHandler(int gpio, int level, uint32_t tick) {
+	printf("GPIO %d became %d at %d\n", gpio, level, tick);
+	int index = -1;
+	for (int i = 0; i < 4; i++) {
+        if (PATCH_BCM_PINS[i] == gpio) {
+            index = i;
             break;
         }
     }
+	update_zynswitch(index, level?0:1);
 }

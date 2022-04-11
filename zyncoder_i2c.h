@@ -92,3 +92,30 @@ unsigned int get_value_zyncoder(uint8_t i);
 void set_value_zyncoder(uint8_t i, unsigned int v, int send);
 
 void handleRibanHwc();
+
+//-----------------------------------------------------------------------------
+// Nsynth hardware
+//-----------------------------------------------------------------------------
+
+static const int MCU_I2C_ADDR = 0x47;
+static const int PATCH_BCM_PINS[4] = {5, 13, 6, 26};
+
+// The I2C device file descriptor.
+int i2c;
+
+// Describes the format of data read from the MCU.
+struct InputsMessage{
+	uint8_t touch[2];
+	int8_t rotaries[4];
+	uint8_t potentiometers[6];
+	uint32_t chk;
+};
+
+int switches[4] = {0};
+
+// Thread function for hardware inputs
+void readNsButtonHandler();
+void readNsInputsThread();
+
+// The last InputsMessage read from the MCU, used for comparison.
+struct InputsMessage lastInputsMessage;

@@ -81,7 +81,7 @@ if ("$ENV{ZYNTHIAN_WIRING_LAYOUT}" STREQUAL "I2C_HWC")
 		target_link_libraries(zyncoder wiringPi jack lo tof)
 	else ()
 		add_library(zyncoder SHARED zyncoder_i2c.h zyncoder_i2c.c zynmidirouter.h zynmidirouter.c zynmaster.h zynmaster.c)
-		target_link_libraries(zyncoder wiringPi jack lo)
+		target_link_libraries(zyncoder jack lo pigpio)
 	endif()
 
 elseif (NOT ZYNTHIAN_FORCE_WIRINGPI_EMU AND HAVE_WIRINGPI_LIB)

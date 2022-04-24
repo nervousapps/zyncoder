@@ -25,6 +25,9 @@
  * ******************************************************************
  */
 
+// Nsynth hardware used if defined
+#define NSYNTH
+
 #include <lo/lo.h>
 
 //-----------------------------------------------------------------------------
@@ -43,7 +46,11 @@ int end_zyncoder();
 
 // Maximum 50 I2C switches
 #define MAX_NUM_ZYNSWITCHES 50
-#define HWC_ADDR 0x08 // I2C address of riban hardware controller
+#if !defined(NSYNTH)
+	#define HWC_ADDR 0x08 // I2C address of riban hardware controller
+#else
+    #define HWC_ADDR 0x47 // I2C address of nsynth hardware controller
+#endif
 
 struct zynswitch_st {
 	uint8_t enabled; // 1 if switch enabled
@@ -96,9 +103,8 @@ void handleRibanHwc();
 //-----------------------------------------------------------------------------
 // Nsynth hardware
 //-----------------------------------------------------------------------------
-
-static const int MCU_I2C_ADDR = 0x47;
 static const int PATCH_BCM_PINS[4] = {5, 13, 6, 26};
+static const int PATCH_WP_PINS[4] = {21, 23, 22, 25};
 
 // The I2C device file descriptor.
 int i2c;
@@ -111,11 +117,19 @@ struct InputsMessage{
 	uint32_t chk;
 };
 
-int switches[4] = {0};
-
-// Thread function for hardware inputs
+// Thread and handler functions for hardware inputs
 void readNsButtonHandler();
 void readNsInputsThread();
+
+void button0Handler();
+void button1Handler();
+void button2Handler();
+void button3Handler();
+
+int previous_key_state0 = -1;
+int previous_key_state1 = -1;
+int previous_key_state2 = -1;
+int previous_key_state3 = -1;
 
 // The last InputsMessage read from the MCU, used for comparison.
 struct InputsMessage lastInputsMessage;
